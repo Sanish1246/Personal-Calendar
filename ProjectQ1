@@ -1,0 +1,319 @@
+#!/bin/bash
+
+# Function to display the current date and time in a dialog box
+ShowDateTime () { 
+    # Getting the current date and time and storing it in a variable
+    DateTime=$(date +"%Y-%m-%d %H:%M:%S")
+
+    # Display the date and time in a dialog box
+    dialog --backtitle "Date and Time Info" \
+           --title "Current Date and Time" \
+           --infobox "\n$DateTime" 8 30 \
+           
+    sleep 5   # Sleep for 5 seconds in the background
+    pkill dialog   # Close the dialog box
+    clear # Clears the screen
+}
+
+ExitDisplay() {
+    dialog --colors --title "Exit screen" --infobox "\n\n\Zb\Z2             Goodbye! \Zn\n\n" 10 40
+    sleep 3   
+    pkill dialog   
+    clear 
+    exit 1  # Immediately quits the program
+}
+
+InfoFile="CalendarInfo.json"   # Assigning the file name to variable InfoFile
+
+# Function to load notes from the file
+ReadInfo() {
+    if [ -e "$InfoFile" ]; then   # Checks if InfoFile exists
+        Info=$(jq -r . "$InfoFile")
+        # jq -r is used to read the contents of the .json file
+        # "." argument represents the entire .json file
+    fi
+}
+
+# Function to save notes to the file
+WriteInfo() {
+    echo "$Info" | jq . > "$InfoFile"
+    # Takes the contents of Info, prints it using jq, and then writes the result to InfoFile
+    # A pipe is used to feed the contents of echo "$Info" to jq . > "$InfoFile"
+}
+
+Calendar() {
+    # Get the current month and year and store them in variables
+    CurrentMonth=$(date +"%m")
+    CurrentDate=$(date +"%Y")
+
+    DateSelected=$(dialog --clear \
+                          --backtitle "Calendar box" \
+                          --title "Calendar" \
+                          --calendar "Select a date:" 0 0 $CurrentMonth $CurrentYear\
+                          2>&1 >/dev/tty)
+
+    # The calendar will start at the top-left corner of the box (0 0)
+    # The calendar will start to display the date starting from the current month and year
+
+    if [ $? -ne 0 ]; then
+        # User chose Cancel, exit the function
+        dialog --colors --title "Action cancelled" --infobox "\Zb\Z1Action cancelled by user\Zn" 10 30
+        sleep 3   
+        pkill dialog   
+        clear 
+        return 1 # Returns to the main program
+    fi
+
+    # Display selected date
+    dialog --colors --title "Selected Date" --msgbox "\ZbYou selected:\Zn $DateSelected" 8 30
+    
+    # Show menu using dialog
+    DateChoice=$(dialog --clear \
+                        --backtitle "Menu" \
+                        --title "Date Menu" \
+                        --yesno "Do you want to add any information to the date?" 10 40 \
+                        2>&1 >/dev/tty)
+    # --yesno makes the only options in the dialog box either "yes" or "No"
+                    
+    if [ $? -ne 0 ]; then
+        # User chose no, exit the function
+        dialog --colors --title "Action cancelled" --infobox "\Zb\Z1Action cancelled by user\Zn" 10 30
+        sleep 3   
+        pkill dialog   
+        clear #
+        return 1 # Returns to the main program
+    fi
+                    
+    Info="{}"  # Initializes Info variable with an empty JSON object
+            
+    # Reads the existing info from the file
+    ReadInfo
+
+    CheckInfo=$(echo "$Info" | jq -r ".$(jq -n --arg sd "$DateSelected" '$sd')")
+    # A JSON object stored in $Info is read, 
+    # A value is obtained based on the key derived from the date in $DateSelected
+    # stores the result in the variable CheckInfo
+    # '--arg sd "$DateSelected" ' creates a variable named sd and assigns it the value of $DateSelected.
+    # jq -n is used to create a JSON object with a key derived from the value stored in $DateSelected
+
+    if [ "$CheckInfo" == "null" ]; then  # If no info present
+        CheckInfo=""
+    fi
+
+    # Check if info exists for the selected date
+    if [ -n "$CheckInfo" ]; then
+        InfoChoice=$(dialog --clear \
+                            --backtitle "Calendar" \
+                            --colors --title "Update Existing info?" \
+                            --yesno "\Zb\Z3Information already present for $DateSelected:\n$CheckInfo\nDo you want to update it?\Zn" 10 40 \
+                            2>&1 >/dev/tty)
+        # --yesno makes the only options in the dialog box either "yes" or "No"
+
+        if [ $? -ne 0 ]; then
+            # User chose no, exit the function
+            dialog --colors --title "Action Cancelled" --infobox "\Zb\Z1Action cancelled by user\Zn" 10 30
+            sleep 3  
+            pkill dialog   
+            clear 
+            return 1
+        fi
+    fi
+
+    # Allow the user to write new information
+    NewInfo=$(dialog --clear \
+                      --backtitle "Calendar" \
+                      --title "Add/Update info" \
+                      --inputbox "Enter info for $DateSelected:" 10 40 "$CheckInfo" \
+                      2>&1 >/dev/tty)
+                          
+    if [ $? -ne 0 ]; then
+        # User chose no, exit the function
+        dialog --colors --title "Action Cancelled" --infobox "\Zb\Z1Action cancelled by user\Zn" 10 30
+        sleep 3   
+        pkill dialog   
+        clear 
+        return 1
+    fi
+
+    # Store the new note in Info
+    Info=$(echo "$Info" | jq --arg sd "$DateSelected" --arg nd "$NewInfo" '.[$sd] = $nd')
+    # A JSON object stored in $Info is read, 
+    # it is modified based on the key derived from the date in $DateSelected, by replacing it with the value in $NewInfo"
+    # stores the result in Info
+    # It sets the value of a key specified by the date ($DateSelected) to the value provided in the variable $NewInfo
+    # '--arg sd  and --arg nd are used to pass variables to jq
+    # .[$sd] = $nd is used to replace the value associated with the key specified by $sd with the value of $nd (Used to update the JSON object)
+            
+    WriteInfo
+    dialog --colors --title "Selected Date" --infobox "\ZbYou selected:\Zn $DateSelected\n\ZbNote added:\Zn $NewInfo" 10 40  
+
+    sleep 5   
+    pkill dialog   
+    clear 
+}
+
+
+
+# Function to display a dialog box with a menu of files
+FileSelection() {
+    local dir="$1"  # Local Variable to store the directory
+    local files=("$dir"/*)
+
+    # Check if the directory is empty
+    # The '#' is used to obtain the length of the array
+    if [ ${#files[@]} -eq 1 -a "${files[0]}" == "$dir/*" ]; then
+        clear # Clears the screen
+        return 1
+    fi 
+
+    # Declare a local array variable named 'options'
+    local options=()
+
+    # Iterate over each file in the 'files' array
+    for file in "${files[@]}"; do
+        # Append a pair to the 'options' array: file name and an empty string
+        options+=("$file" "")
+    done
+
+
+    # Prompt user for file selection
+    local ChosenFile
+    ChosenFile=$(dialog --title "File Selection" --menu "Choose a file:" 0 0 0 "${options[@]}" 3>&1 1>&2 2>&3)
+    # The @ makes it so all items in the array options are displayed
+    # 3>&1 1>&2 2>&3 allows a command, such as dialog, to capture both standard output and standard error  
+
+    # Check if the user canceled the file selection
+    # -z checks if ChosenFile is empty
+    if [ -z "$ChosenFile" ]; then
+        clear # Clears the screen
+        return 1
+    fi
+
+    echo "$ChosenFile"
+}
+
+DeleteFile() {
+    while true; do
+        # Prompt user for directory name
+        read -p "Enter the directory name (press Enter for the current directory): " CurrentDir
+
+        # Use the current directory if no directory name is provided
+        CurrentDir=${CurrentDir:-$(pwd)}
+
+        # Check if the entered directory exists
+        if [ ! -d "$CurrentDir" ]; then
+            dialog --colors --title "Non-existing directory" --msgbox "\Zb\Z1Error: Directory '$CurrentDir' not found.\nPlease retry! \Zn" 10 30
+            clear 
+        else
+            break  
+        fi
+    done
+
+    # Display the dialog box to select a file
+    FileToDelete=$(FileSelection "$CurrentDir")  # Calls the function FileSelection using CurrentDir as an argument
+
+    # Check if the user canceled the file selection
+    if [ $? -eq 1 ]; then
+        if [ -z "$(ls -A "$CurrentDir")" ]; then
+            dialog --colors --title "Empty Directory" --infobox "\Zb\Z1The given directory is empty! \Zn" 10 30
+        else
+            dialog --colors --title "Action Cancelled" --infobox "\Zb\Z1File selection canceled by the user.\Zn" 10 30
+        fi
+        sleep 3  
+
+        pkill dialog  
+        clear 
+        return 1
+    fi
+
+    if [ -f "$FileToDelete" ]; then  # If user chose a file
+            dialog --colors --yesno "\ZbDo you really want to delete $FileToDelete?\Zn" 0 0  # Asks the user for confirmation
+        elif [ -d "$FileToDelete" ]; then  # If user chose a directory
+             dialog --colors --yesno "\ZbDo you really want to delete directory $FileToDelete? and its contents?\Zn" 0 0  # Asks the user for confirmation
+    fi
+
+
+    Response=$?  # Assigns the value of the answer to a variable (yes=0;no=1)
+    
+    clear
+
+
+    if [ $Response -eq 0 ]; then  # If the answer is yes
+        if [ -f "$FileToDelete" ]; then
+            rm "$FileToDelete"
+            dialog --colors --msgbox "\Zb\Z2File $FileToDelete deleted successfully\Zn" 0 0
+        elif [ -d "$FileToDelete" ]; then
+             rm -r "$FileToDelete"
+             dialog --colors --msgbox "\Zb\Z2Drectory $FileToDelete deleted successfully\Zn" 0 0
+        else
+            dialog --colors --msgbox "\Zb\Z1Error deleting $FileToDelete\Zn" 0 0
+        fi
+
+   else
+        dialog --colors --msgbox "\Zb\Z1$FileToDelete was not deleted\Zn" 0 0  # If user chose to not delete
+    fi
+}
+
+# Main program
+while true; do
+    
+
+    # Show menu using dialog
+  
+    Choice=$(dialog --clear \
+                    --backtitle "Menu" \
+                    --colors --title "Main Menu" \
+                    --menu "\Z2Choose one:\Zn" 15 40 5 \
+                    1 "Show date and time" \
+                    2 "Display calendar" \
+                    3 "Delete file" \
+                    4 "Show Computer info" \
+                    5 "\Z1Exit\Zn"\
+                    2>&1 >/dev/tty)
+                    
+    # 15 is the height, and 40 is the width of the dialog box.
+    # 5 is the number of choices to be displayed.
+    
+    # 2>&1 >/dev/tty ensures that both standard output and standard error 
+    # messages from the dialog command are displayed on the terminal.
+
+    if [ $? -ne 0 ]; then
+        # User chose Cancel, exit the script
+        dialog --colors --title "Action Cancelled" --infobox "\Zb\Z1Action cancelled by user\Zn" 10 30
+        sleep 3
+        pkill dialog   
+        clear 
+        exit 1
+    fi
+
+    case $Choice in  # Using  case selection to process the user's choice
+        1)
+            ShowDateTime  # Calls the user defined method to display date and time
+            ;;   # Works like th 'Break' statement in C during case selection
+        2)
+            Calendar  # Calls the user defined method to display the calendar
+            ;;   
+        3)
+            DeleteFile # Calls the user defined method for file deletion
+            ;;   
+        4)
+            source ProjectQ2 # Calls the second script
+            ;;   
+        5)
+            ExitDisplay # Calls the user defined method to exit the program
+            ;;   
+    esac   # End Selection
+    
+    InfoChoice=$(dialog --clear \
+                        --backtitle "End" \
+                        --colors --title "End Menu" \
+                        --yesno "\Zb\Z3Do you want to perform another action?\Zn" 10 40 \
+                        2>&1 >/dev/tty)   #P rompts the user in case he wants to run another action
+                        
+    if [ $? -ne 0 ]; then
+        # User chose no, exit the program
+        ExitDisplay
+    fi
+done
+
+

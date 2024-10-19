@@ -1,0 +1,56 @@
+#!/bin/bash
+
+#writing a function to show os info
+OSInfo() {
+	# retrieving OS information by using lsb_release and using cut to fetch the exact information we need
+	information=$(lsb_release -d | cut -f2)
+	# using the utility keyword uname to return our kernel version
+	kernel=$(uname -r)
+	# displaying information in a dialog windows 
+	dialog --colors --title "OS Information" --msgbox "\ZbOS Information:\Zn$information\n\ZbKernel:\Zn$kernel" 8 30
+}
+
+#writing a function to show cpu info
+CPUInfo(){
+	# using the utility keyword lscpu to display our kernel version
+	# using grep command to search the lines returned for just the information we need
+	# using cut to tailor the information to just what we need by fetching the specified field.
+	cpu_information=$(lscpu | grep -E 'Architecture|Model name|CPU\(s\):' | cut -d':' -f2 | tr -s ' ')
+	# displaying information in a dialog windows 
+	dialog --colors --title "CPU Information" --msgbox "\ZbCPU Information:\Zn$cpu_information" 8 60
+}
+
+#writing a function to show memory info
+MemInfo(){
+	# using the command free to return a human readable(-h) output showing RAM information
+	memory_info=$(free -h)
+	FormattedMemInfo=$(echo -e "Memory Information:\n$memory_info")
+	# displaying information in a dialog windows 
+	dialog --title "Memory Information" --msgbox  "$FormattedMemInfo" 15 40
+	}
+
+#writing a function to show hard disk info	
+HDInfo(){
+	# using the command lsblk to return a human readable(-h) output showing storage infomation(block devices)
+	# -o in this context specifies we are interested in Name, Size, Type and Mountpoint
+	disk_info=$(lsblk -o NAME,SIZE,TYPE,MOUNTPOINT)
+	FormattedDiskInfo=$(echo -e "Hard Disk Information:\n$disk_info")
+	# displaying information in a dialog windows
+	dialog --title "Hard Disk information" --msgbox "$FormattedDiskInfo" 30 75
+	}
+
+#writing a function to show file system infomation
+FileSys(){
+	#  using df command to return the disk(storage) usage information 
+	filesystem_info=$(df -h)
+	FormattedFileInfo=$(echo -e "File System Information:\n$filesystem_info")
+	# displaying information in a dialog windows
+	dialog --title "File System information" --msgbox "$FormattedFileInfo" 12 70
+	}
+
+# calling all our functions which will be exported to script 1   
+OSInfo
+CPUInfo
+MemInfo
+HDInfo
+FileSys
